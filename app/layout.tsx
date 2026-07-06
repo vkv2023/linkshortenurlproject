@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Short Link App",
-  description: "A Clerk-authenticated Next.js app",
+  title: "LinkShortenURL — Short link landing page",
+  description: "A modern short-link app with Clerk authentication, protected dashboard access, and responsive Next.js UI.",
 };
 
 export default function RootLayout({
