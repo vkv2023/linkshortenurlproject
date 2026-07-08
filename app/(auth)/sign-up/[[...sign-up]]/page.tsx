@@ -2,10 +2,6 @@ import { SignUp } from "@clerk/nextjs";
 
 export default function SignUpPage() {
   return (
-    <SignUp
-      routing="path"
-      path="/sign-up"
-      signUpForceRedirectUrl="/dashboard"
-    />
+    <SignUp routing="path" path="/sign-up" forceRedirectUrl="/dashboard" />
   );
 }
