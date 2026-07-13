@@ -1,5 +1,5 @@
 import { UserButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 
 const features = [
@@ -28,6 +28,16 @@ const features = [
 export default async function Home() {
   const { userId } = await auth();
   const isSignedIn = Boolean(userId);
+  const user = isSignedIn ? await currentUser() : null;
+
+  const userDetails = user
+    ? [
+        { label: "User ID", value: user.id },
+        { label: "Name", value: user.fullName ?? "Not provided" },
+        { label: "Email", value: user.emailAddresses[0]?.emailAddress ?? "Not provided" },
+        { label: "Username", value: user.username ?? "Not provided" },
+      ]
+    : [];
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-black dark:text-zinc-50">
@@ -91,6 +101,44 @@ export default async function Home() {
             </div>
           </div>
         </section>
+
+        {isSignedIn && user && (
+          <section className="mt-12 rounded-[2rem] border border-zinc-200 bg-white/90 p-8 shadow-sm shadow-zinc-200/50 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90 dark:shadow-black/30">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-[0.3em] text-zinc-500 dark:text-zinc-400">
+                  Signed-in user
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+                  {user.fullName ?? user.username ?? "Current user"}
+                </h2>
+              </div>
+              {user.imageUrl ? (
+                <img
+                  src={user.imageUrl}
+                  alt={user.fullName ?? "User profile"}
+                  className="h-14 w-14 rounded-full object-cover"
+                />
+              ) : null}
+            </div>
+
+            <ul className="mt-6 space-y-3">
+              {userDetails.map((item) => (
+                <li
+                  key={item.label}
+                  className="flex items-center justify-between rounded-2xl border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                >
+                  <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                    {item.label}
+                  </span>
+                  <span className="text-right text-zinc-950 dark:text-zinc-50">
+                    {item.value}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="mt-12 grid gap-10 lg:grid-cols-[0.8fr_0.7fr]">
           <div className="rounded-[2rem] border border-zinc-200 bg-white/90 p-8 shadow-sm shadow-zinc-200/50 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90 dark:shadow-black/30">
