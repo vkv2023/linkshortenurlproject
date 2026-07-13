@@ -1,5 +1,5 @@
 import { UserButton } from "@clerk/nextjs";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
@@ -16,12 +16,6 @@ export default async function DashboardPage() {
   const { userId } = await auth();
 
   if (!userId) {
-    redirect("/sign-in");
-  }
-
-  const user = await currentUser();
-
-  if (!user) {
     redirect("/sign-in");
   }
 
