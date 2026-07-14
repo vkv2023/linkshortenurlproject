@@ -1,9 +1,16 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
-import { getUserLinks } from "@/data/links";
+import {
+  createLink,
+  getUserLinksCount,
+  getUserLinksCountBySearch,
+  getUserLinksPaginated,
+  getUserLinksPaginatedBySearch,
+} from "@/data/links";
 import {
   Card,
   CardContent,
@@ -12,14 +19,84 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default async function DashboardPage() {
+const ALLOWED_LIMITS = [5, 10, 20] as const;
+const DEFAULT_LIMIT = 5;
+
+type DashboardPageProps = {
+  searchParams?: Promise<{
+    page?: string;
+    limit?: string;
+    query?: string;
+    status?: string;
+  }>;
+};
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const { userId } = await auth();
 
   if (!userId) {
     redirect("/sign-in");
   }
 
-  const links = await getUserLinks(userId);
+  const params = (await searchParams) ?? {};
+  const status = params.status;
+
+  async function createLinkAction(formData: FormData) {
+    "use server";
+
+    const { userId: currentUserId } = await auth();
+
+    if (!currentUserId) {
+      redirect("/sign-in");
+    }
+
+    const slug = String(formData.get("slug") ?? "");
+    const destination = String(formData.get("destination") ?? "");
+
+    try {
+      await createLink(slug, destination, currentUserId);
+      revalidatePath("/dashboard");
+      redirect("/dashboard?status=created");
+    } catch {
+      redirect("/dashboard?status=error");
+    }
+  }
+
+  const parsedLimit = Number(params.limit);
+  const limit = ALLOWED_LIMITS.includes(
+    parsedLimit as (typeof ALLOWED_LIMITS)[number],
+  )
+    ? parsedLimit
+    : DEFAULT_LIMIT;
+
+  const parsedPage = Number(params.page);
+  const page = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const query = params.query?.trim() ?? "";
+
+  const makeHref = (nextPage: number, nextLimit: number, nextQuery: string) => {
+    const search = new URLSearchParams();
+    search.set("page", String(nextPage));
+    search.set("limit", String(nextLimit));
+
+    if (nextQuery) {
+      search.set("query", nextQuery);
+    }
+
+    return `?${search.toString()}`;
+  };
+
+  const totalCount = query
+    ? await getUserLinksCountBySearch(userId, query)
+    : await getUserLinksCount(userId);
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+  const currentPage = Math.min(page, totalPages);
+
+  const links = query
+    ? await getUserLinksPaginatedBySearch(userId, query, currentPage, limit)
+    : await getUserLinksPaginated(userId, currentPage, limit);
+
+  const previousHref = makeHref(Math.max(1, currentPage - 1), limit, query);
+  const nextHref = makeHref(Math.min(totalPages, currentPage + 1), limit, query);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -40,15 +117,105 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Your links</CardTitle>
             <CardDescription>
-              {links.length > 0
-                ? `${links.length} shortened link${links.length === 1 ? "" : "s"} in your account`
+              {query && totalCount > 0
+                ? `${totalCount} matching shortened link${totalCount === 1 ? "" : "s"} in your account`
+                : totalCount > 0
+                ? `${totalCount} shortened link${totalCount === 1 ? "" : "s"} in your account`
                 : "No links have been created yet"}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <form action={createLinkAction} className="mb-4 grid gap-2 md:grid-cols-[1fr,2fr,auto]">
+              <input
+                type="text"
+                name="slug"
+                placeholder="custom-slug"
+                required
+                maxLength={64}
+                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+              <input
+                type="url"
+                name="destination"
+                placeholder="https://example.com"
+                required
+                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+              <button
+                type="submit"
+                className="h-10 rounded-md border border-emerald-600 bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500"
+              >
+                Create link
+              </button>
+            </form>
+
+            {status === "created" ? (
+              <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                Link created successfully.
+              </p>
+            ) : null}
+
+            {status === "error" ? (
+              <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                Could not create link. Make sure the slug is unique and the destination URL is valid.
+              </p>
+            ) : null}
+
+            <form action="/dashboard" method="get" className="mb-4 flex flex-wrap items-center gap-2">
+              <input
+                type="search"
+                name="query"
+                defaultValue={query}
+                placeholder="Search by slug or destination"
+                className="h-10 w-full min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+              <input type="hidden" name="page" defaultValue="1" />
+              <input type="hidden" name="limit" defaultValue={String(limit)} />
+              <button
+                type="submit"
+                className="h-10 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
+              >
+                Search
+              </button>
+              {query ? (
+                <Link
+                  href={makeHref(1, limit, "")}
+                  className="h-10 rounded-md border border-zinc-300 px-3 text-sm font-medium leading-10 text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
+                >
+                  Clear
+                </Link>
+              ) : null}
+            </form>
+
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <span>Per page:</span>
+                <div className="flex items-center gap-2">
+                  {ALLOWED_LIMITS.map((value) => (
+                    <Link
+                      key={value}
+                      href={makeHref(1, value, query)}
+                      className={`rounded-md border px-3 py-1 transition ${
+                        limit === value
+                          ? "border-emerald-600 bg-emerald-50 text-emerald-700 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300"
+                          : "border-zinc-300 text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
+                      }`}
+                    >
+                      {value}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                Page {currentPage} of {totalPages}
+              </div>
+            </div>
+
             {links.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                Create your first short link to see it appear here.
+                {query
+                  ? "No links matched your search."
+                  : "Create your first short link to see it appear here."}
               </div>
             ) : (
               <div className="space-y-4">
@@ -80,6 +247,36 @@ export default async function DashboardPage() {
                     </p>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {totalCount > 0 && (
+              <div className="mt-6 flex items-center justify-between">
+                {currentPage > 1 ? (
+                  <Link
+                    href={previousHref}
+                    className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
+                  >
+                    Previous
+                  </Link>
+                ) : (
+                  <span className="rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
+                    Previous
+                  </span>
+                )}
+
+                {currentPage < totalPages ? (
+                  <Link
+                    href={nextHref}
+                    className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
+                  >
+                    Next
+                  </Link>
+                ) : (
+                  <span className="rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
+                    Next
+                  </span>
+                )}
               </div>
             )}
           </CardContent>
