@@ -1,11 +1,9 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
 import {
-  createLink,
   getUserLinksCount,
   getUserLinksCountBySearch,
   getUserLinksPaginated,
@@ -18,6 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CreateLinkDialog } from "@/components/dashboard/create-link-dialog";
+import { LinkActions } from "@/components/dashboard/link-actions";
 
 const ALLOWED_LIMITS = [5, 10, 20] as const;
 const DEFAULT_LIMIT = 5;
@@ -40,27 +40,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const params = (await searchParams) ?? {};
   const status = params.status;
-
-  async function createLinkAction(formData: FormData) {
-    "use server";
-
-    const { userId: currentUserId } = await auth();
-
-    if (!currentUserId) {
-      redirect("/sign-in");
-    }
-
-    const slug = String(formData.get("slug") ?? "");
-    const destination = String(formData.get("destination") ?? "");
-
-    try {
-      await createLink(slug, destination, currentUserId);
-      revalidatePath("/dashboard");
-      redirect("/dashboard?status=created");
-    } catch {
-      redirect("/dashboard?status=error");
-    }
-  }
 
   const parsedLimit = Number(params.limit);
   const limit = ALLOWED_LIMITS.includes(
@@ -98,6 +77,39 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const previousHref = makeHref(Math.max(1, currentPage - 1), limit, query);
   const nextHref = makeHref(Math.min(totalPages, currentPage + 1), limit, query);
 
+  const statusMessage =
+    status === "created"
+      ? {
+          tone: "success",
+          text: "Link created successfully.",
+        }
+      : status === "updated"
+      ? {
+          tone: "success",
+          text: "Link updated successfully.",
+        }
+      : status === "deleted"
+      ? {
+          tone: "success",
+          text: "Link deleted successfully.",
+        }
+      : status === "create-error"
+      ? {
+          tone: "error",
+          text: "Could not create link. Make sure the slug is unique and the destination URL is valid.",
+        }
+      : status === "update-error"
+      ? {
+          tone: "error",
+          text: "Could not update link. Make sure the slug is unique and the destination URL is valid.",
+        }
+      : status === "delete-error"
+      ? {
+          tone: "error",
+          text: "Could not delete link. Please try again.",
+        }
+      : null;
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <main className="mx-auto flex min-h-screen max-w-5xl flex-col px-6 py-24">
@@ -125,54 +137,36 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={createLinkAction} className="mb-4 grid gap-2 md:grid-cols-[1fr,2fr,auto]">
-              <input
-                type="text"
-                name="slug"
-                placeholder="custom-slug"
-                required
-                maxLength={64}
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
-              <input
-                type="url"
-                name="destination"
-                placeholder="https://example.com"
-                required
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
-              <button
-                type="submit"
-                className="h-10 rounded-md border border-emerald-600 bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500"
+            <div className="mb-4">
+              <CreateLinkDialog page={currentPage} limit={limit} query={query} />
+            </div>
+
+            {statusMessage ? (
+              <p
+                className={
+                  statusMessage.tone === "success"
+                    ? "mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                }
               >
-                Create link
-              </button>
-            </form>
-
-            {status === "created" ? (
-              <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-                Link created successfully.
+                {statusMessage.text}
               </p>
             ) : null}
 
-            {status === "error" ? (
-              <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-                Could not create link. Make sure the slug is unique and the destination URL is valid.
-              </p>
-            ) : null}
-
-            <form action="/dashboard" method="get" className="mb-4 flex flex-wrap items-center gap-2">
+            <form action="/dashboard" method="get" className="mb-4 flex flex-wrap items-center gap-2" suppressHydrationWarning>
               <input
                 type="search"
                 name="query"
                 defaultValue={query}
                 placeholder="Search by slug or destination"
+                suppressHydrationWarning
                 className="h-10 w-full min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none ring-emerald-500 transition focus:ring-2 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
               />
               <input type="hidden" name="page" defaultValue="1" />
               <input type="hidden" name="limit" defaultValue={String(limit)} />
               <button
                 type="submit"
+                suppressHydrationWarning
                 className="h-10 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600"
               >
                 Search
@@ -233,14 +227,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           {link.destination}
                         </p>
                       </div>
-                      <Link
-                        href={link.destination}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm font-semibold text-emerald-600 hover:text-emerald-500"
-                      >
-                        Visit
-                      </Link>
+                      <LinkActions
+                        link={{
+                          id: link.id,
+                          slug: link.slug,
+                          destination: link.destination,
+                        }}
+                        page={currentPage}
+                        limit={limit}
+                        query={query}
+                      />
                     </div>
                     <p className="mt-3 text-xs uppercase tracking-[0.2em] text-zinc-400">
                       Created {new Date(link.createdAt).toLocaleDateString()}

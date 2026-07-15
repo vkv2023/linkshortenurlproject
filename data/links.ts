@@ -234,3 +234,109 @@ export async function createLink(
 
   return result[0];
 }
+
+async function getOwnedLinkById(id: number, userId: string) {
+  const result = await db
+    .select({
+      id: shortLinks.id,
+      slug: shortLinks.slug,
+      destination: shortLinks.destination,
+      userId: shortLinks.userId,
+    })
+    .from(shortLinks)
+    .where(and(eq(shortLinks.id, id), eq(shortLinks.userId, userId)));
+
+  return result[0];
+}
+
+/**
+ * Update an existing short link owned by a specific user
+ * @param id - The link identifier
+ * @param slug - The updated short link slug
+ * @param destination - The updated destination URL
+ * @param userId - The Clerk user ID
+ * @returns The updated link
+ */
+export async function updateLink(
+  id: number,
+  slug: string,
+  destination: string,
+  userId: string,
+) {
+  const existingLink = await getOwnedLinkById(id, userId);
+
+  if (!existingLink) {
+    throw new Error("Link not found");
+  }
+
+  const normalizedSlug = normalizeSlug(slug);
+  const normalizedDestination = normalizeDestination(destination);
+
+  if (!normalizedSlug) {
+    throw new Error("Slug is required");
+  }
+
+  if (normalizedSlug.length > 64) {
+    throw new Error("Slug must be 64 characters or fewer");
+  }
+
+  if (!normalizedDestination) {
+    throw new Error("Destination URL is required");
+  }
+
+  if (!isValidHttpUrl(normalizedDestination)) {
+    throw new Error("Destination URL must start with http:// or https://");
+  }
+
+  if (normalizedSlug !== existingLink.slug) {
+    const slugInUse = await getLinkBySlug(normalizedSlug);
+
+    if (slugInUse && slugInUse.id !== id) {
+      throw new Error("Slug is already in use");
+    }
+  }
+
+  const result = await db
+    .update(shortLinks)
+    .set({
+      slug: normalizedSlug,
+      destination: normalizedDestination,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(shortLinks.id, id), eq(shortLinks.userId, userId)))
+    .returning({
+      id: shortLinks.id,
+      slug: shortLinks.slug,
+      destination: shortLinks.destination,
+      createdAt: shortLinks.createdAt,
+      updatedAt: shortLinks.updatedAt,
+    });
+
+  return result[0];
+}
+
+/**
+ * Delete an existing short link owned by a specific user
+ * @param id - The link identifier
+ * @param userId - The Clerk user ID
+ * @returns The deleted link
+ */
+export async function deleteLink(id: number, userId: string) {
+  const existingLink = await getOwnedLinkById(id, userId);
+
+  if (!existingLink) {
+    throw new Error("Link not found");
+  }
+
+  const result = await db
+    .delete(shortLinks)
+    .where(and(eq(shortLinks.id, id), eq(shortLinks.userId, userId)))
+    .returning({
+      id: shortLinks.id,
+      slug: shortLinks.slug,
+      destination: shortLinks.destination,
+      createdAt: shortLinks.createdAt,
+    });
+
+  return result[0];
+}
