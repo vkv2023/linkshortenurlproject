@@ -116,10 +116,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.25em] text-zinc-500">
-              Your links
+              Save and keep your url shortened
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              Dashboard
+              URL Shortner Dashboard
             </h1>
           </div>
           <UserButton />
